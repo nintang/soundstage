@@ -42,7 +42,7 @@ xattr -dr com.apple.quarantine /Applications/SoundStage.app
 **Or build from source** (takes ~1 min, needs Xcode command line tools):
 
 ```bash
-git clone https://github.com/TonAldo48/soundstage.git
+git clone https://github.com/nintang/soundstage.git
 cd soundstage && ./macos/make-app.sh
 cp -R macos/build/SoundStage.app /Applications/
 ```
