@@ -4,6 +4,7 @@
 
 **Play system audio through all your output devices at once — with per-device volume, latency alignment, and live metering. From your menu bar.**
 
+[![Build](https://github.com/nintang/soundstage/actions/workflows/release.yml/badge.svg)](https://github.com/nintang/soundstage/actions/workflows/release.yml)
 ![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 ![Apple Silicon](https://img.shields.io/badge/arch-Apple%20Silicon-lightgrey)

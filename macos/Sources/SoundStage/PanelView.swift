@@ -1,5 +1,21 @@
 import SwiftUI
 
+/// ImageRenderer (--capture) has no backing window, so hierarchical styles
+/// (.secondary/.tertiary/.quaternary) resolve nearly black. During capture we
+/// substitute explicit colors; the live app keeps the native styles.
+enum CaptureTheme {
+    static var active = false
+    static var secondary: AnyShapeStyle {
+        active ? AnyShapeStyle(Color(white: 0.78)) : AnyShapeStyle(.secondary)
+    }
+    static var tertiary: AnyShapeStyle {
+        active ? AnyShapeStyle(Color(white: 0.58)) : AnyShapeStyle(.tertiary)
+    }
+    static var faint: AnyShapeStyle {
+        active ? AnyShapeStyle(Color(white: 0.30)) : AnyShapeStyle(.quaternary)
+    }
+}
+
 struct PanelView: View {
     @EnvironmentObject var model: AppModel
 
@@ -36,7 +52,7 @@ struct PanelView: View {
             } else {
                 Text("stopped")
                     .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CaptureTheme.secondary)
             }
         }
     }
@@ -46,7 +62,7 @@ struct PanelView: View {
             HStack {
                 Text("Master")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CaptureTheme.secondary)
                     .frame(width: 44, alignment: .leading)
                 Slider(
                     value: Binding(
@@ -57,13 +73,13 @@ struct PanelView: View {
                 )
                 Text("\(Int(model.settings.master * 100))%")
                     .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CaptureTheme.secondary)
                     .frame(width: 40, alignment: .trailing)
             }
             HStack {
                 Text("Clock")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CaptureTheme.secondary)
                     .frame(width: 44, alignment: .leading)
                 Picker("", selection: Binding(
                     get: { model.effectiveMasterUid ?? "" },
@@ -150,15 +166,15 @@ struct DeviceRow: View {
                     .font(.system(size: 9, weight: .semibold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(.quaternary, in: Capsule())
-                    .foregroundStyle(.secondary)
+                    .background(CaptureTheme.faint, in: Capsule())
+                    .foregroundStyle(CaptureTheme.secondary)
             }
 
             Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
                 GridRow {
                     Text("VOL")
                         .font(.system(size: 9, weight: .bold).monospaced())
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(CaptureTheme.tertiary)
                     Slider(
                         value: Binding(
                             get: { model.settings.gain[device.uid] ?? 1 },
@@ -169,14 +185,14 @@ struct DeviceRow: View {
                     .controlSize(.mini)
                     Text("\(Int((model.settings.gain[device.uid] ?? 1) * 100))%")
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(CaptureTheme.secondary)
                         .frame(width: 36, alignment: .trailing)
                     Button {
                         model.toggleMute(device.uid)
                     } label: {
                         Image(systemName: muted ? "speaker.slash.fill" : "speaker.fill")
                             .font(.system(size: 9))
-                            .foregroundStyle(muted ? .red : .secondary)
+                            .foregroundStyle(muted ? AnyShapeStyle(.red) : CaptureTheme.secondary)
                     }
                     .buttonStyle(.plain)
                     .help(muted ? "Unmute" : "Mute")
@@ -184,7 +200,7 @@ struct DeviceRow: View {
                 GridRow {
                     Text("DLY")
                         .font(.system(size: 9, weight: .bold).monospaced())
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(CaptureTheme.tertiary)
                     Slider(
                         value: Binding(
                             get: { model.settings.delayMs[device.uid] ?? 0 },
@@ -195,7 +211,7 @@ struct DeviceRow: View {
                     .controlSize(.mini)
                     Text("\(Int(model.settings.delayMs[device.uid] ?? 0)) ms")
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(CaptureTheme.secondary)
                         .frame(width: 46, alignment: .trailing)
                         .lineLimit(1)
                         .fixedSize()
@@ -221,7 +237,7 @@ struct MeterBar: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(.quaternary)
+                Capsule().fill(CaptureTheme.faint)
                 Capsule()
                     .fill(LinearGradient(
                         colors: [.green, .green, .yellow, .red],

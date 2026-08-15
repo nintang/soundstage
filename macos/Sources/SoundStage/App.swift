@@ -25,6 +25,7 @@ struct SoundStageApp: App {
 
     @MainActor
     private static func capture(to path: String, hero: Bool) {
+        CaptureTheme.active = true
         let model = AppModel(preview: true)
         model.running = true
         // Deterministic demo state, independent of what's connected.
@@ -37,7 +38,7 @@ struct SoundStageApp: App {
                         channels: 2, sampleRate: 48000, isDefault: false),
         ]
         model.settings = Settings()
-        let demoLevels: [Float] = [0.2, 0.13, 0.17]
+        let demoLevels: [Float] = [0.09, 0.05, 0.07]
         for (i, d) in model.devices.enumerated() {
             model.settings.gain[d.uid] = [1.0, 0.85, 0.9][i]
             // Delay goes on the *fast* (wired) devices to match Bluetooth
@@ -47,10 +48,10 @@ struct SoundStageApp: App {
 
         let panel = PanelView()
             .environmentObject(model)
-            .background(Color(red: 0.13, green: 0.13, blue: 0.14))
+            .background(Color(red: 0.165, green: 0.17, blue: 0.185))
             .clipShape(RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 1))
+                .strokeBorder(.white.opacity(0.14), lineWidth: 1))
 
         let content: AnyView = hero
             ? AnyView(panel
