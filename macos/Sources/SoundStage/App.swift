@@ -1,17 +1,66 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    let model = AppModel()
+    private var mixerPanel: NSPanel?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Accessory = no Dock icon. Open the mixer so the app is findable even
+        // when macOS 26 hides the menu-bar item.
+        NSApp.setActivationPolicy(.accessory)
+        showMixerPanel()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
-        // Tear the tap down so system audio unmutes.
         Engine.shared.stop()
+    }
+
+    func showMixerPanel() {
+        if let mixerPanel, mixerPanel.isVisible {
+            mixerPanel.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let root = PanelView()
+            .environmentObject(model)
+            .preferredColorScheme(.dark)
+        let hosting = NSHostingController(rootView: root)
+        hosting.view.frame = NSRect(x: 0, y: 0, width: 360, height: 420)
+
+        let panel = NSPanel(contentViewController: hosting)
+        panel.title = "SoundStage"
+        panel.styleMask = [.titled, .closable, .nonactivatingPanel, .utilityWindow]
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
+        panel.level = .floating
+        panel.isReleasedWhenClosed = false
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+        mixerPanel = panel
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    static func openMenuBarSettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.MenuBar-Settings.extension",
+            "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension",
+        ]
+        for urlString in candidates {
+            if let url = URL(string: urlString), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
     }
 }
 
 @main
 struct SoundStageApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var model = AppModel()
 
     init() {
         // Dev-only: `SoundStage --capture out.png [--hero]` renders the panel
@@ -80,9 +129,9 @@ struct SoundStageApp: App {
     var body: some Scene {
         MenuBarExtra {
             PanelView()
-                .environmentObject(model)
+                .environmentObject(appDelegate.model)
         } label: {
-            Image(systemName: "slider.vertical.3")
+            Label("SoundStage", systemImage: "slider.vertical.3")
         }
         .menuBarExtraStyle(.window)
     }

@@ -9,6 +9,7 @@ macos/
 ├── Info.plist               LSUIElement, NSAudioCaptureUsageDescription
 ├── AppIcon.icns
 ├── make-app.sh              swift build → assemble .app → ad-hoc codesign
+├── install.sh               optional: copy local build to /Applications
 └── Sources/SoundStage/
     ├── App.swift            @main MenuBarExtra scene + --capture dev mode
     ├── Model.swift          AppModel: settings, persistence, hot-plug, meters
@@ -39,10 +40,27 @@ Three properties matter:
 - **Private** — the tap isn't visible to other processes.
 
 **TCC gotcha:** without the *System Audio Recording* permission, tap creation
-*succeeds* and buffers flow — but every sample is zero. If you're debugging
-"silence but no error", check TCC first. The permission prompt is attributed
-to the responsible process, so it must be triggered from the bundled app (with
-`NSAudioCaptureUsageDescription`), not from a bare CLI binary.
+*succeeds* and buffers flow — but every sample is zero. SoundStage detects this
+when other apps are playing and auto-stops (so `.mutedWhenTapped` doesn’t leave
+the machine silent). Grants don’t apply mid-launch — quit and reopen after
+allowing. A quarantined copy from Downloads can be **App Translocated**; the
+app refuses to start until it’s in `/Applications` with quarantine cleared.
+
+**Ad-hoc signing:** rebuilds change the CDHash and can orphan the Privacy
+toggle (UI still ON, tap silent). Toggle SoundStage off/on in both Privacy
+lists, then Quit and reopen. Notarization is the long-term fix.
+
+**Gatekeeper:** quarantined ad-hoc downloads often fail to open
+(`kLSNoExecutableErr`). Clear with `xattr -dr com.apple.quarantine`.
+
+**Menu bar (macOS 26):** third-party status items can be hidden. SoundStage
+opens a floating mixer on launch so the UI is always reachable.
+
+**HDMI/DP aggregate gotcha (macOS 26):** including some DisplayPort/HDMI
+outputs in the private aggregate makes `AudioDeviceStart` succeed while the
+IO proc **never fires** (zero callbacks → total silence). SoundStage defaults
+HDMI/DP devices to off; Built-in + Bluetooth still default on. Enable display
+outputs one at a time if needed.
 
 ### 2. Fan-out — private aggregate device
 

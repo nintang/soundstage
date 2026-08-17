@@ -32,7 +32,7 @@ macOS lets you pick *one* output device. SoundStage removes that limit: your mon
 
 **Download:** grab `SoundStage.app.zip` from [Releases](../../releases), unzip, drop into `/Applications`.
 
-The app is not notarized (no paid developer account), so on first open macOS will complain. Clear it with:
+The app is not notarized (no paid developer account), so on first open macOS may refuse with a vague error. Privacy toggles do **not** clear that. Fix with:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/SoundStage.app
@@ -40,17 +40,20 @@ xattr -dr com.apple.quarantine /Applications/SoundStage.app
 
 …or right-click the app → **Open** → **Open**.
 
+SoundStage has **no Dock icon**. On launch it opens a small mixer window; look near the clock for **SoundStage** as well. On macOS 26, if the menu-bar item is missing, turn it on under **System Settings → Menu Bar** (or use **Menu Bar Settings…** in the mixer).
+
+Then **▶ Start** and allow **System Audio Recording**. If you allowed permission while the app was already running, Quit and reopen once. After a rebuild, if Start is silent but Privacy still looks ON, toggle SoundStage off/on in **Screen & System Audio Recording** (both lists on macOS 26).
+
 **Or build from source** (takes ~1 min, needs Xcode command line tools):
 
 ```bash
 git clone https://github.com/nintang/soundstage.git
-cd soundstage && ./macos/make-app.sh
-cp -R macos/build/SoundStage.app /Applications/
+cd soundstage && ./macos/make-app.sh && ./macos/install.sh
 ```
 
 ## First run
 
-1. Click the ![tray](https://img.shields.io/badge/-%F0%9F%8E%9A-grey) sliders icon in your menu bar
+1. Use the mixer window (or the ![tray](https://img.shields.io/badge/-%F0%9F%8E%9A-grey) sliders item in the menu bar)
 2. Toggle on the devices you want, hit **▶ Start**
 3. macOS asks for **System Audio Recording** permission — allow it (that's how SoundStage taps the audio stream; nothing is recorded or stored)
 

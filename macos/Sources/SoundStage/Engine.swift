@@ -131,6 +131,37 @@ func listOutputDevices() -> [AudioDevice] {
     return result
 }
 
+/// Gatekeeper App Translocation: quarantined apps opened from Downloads/Desktop
+/// run from a random read-only path. TCC grants then fail to stick / apply.
+func isRunningFromAppTranslocation() -> Bool {
+    Bundle.main.bundlePath.contains("/AppTranslocation/")
+}
+
+/// True if some other process is actively playing audio (used to distinguish
+/// "nothing is playing" from "tap is authorized but delivering silence").
+func anyOtherProcessPlayingOutput() -> Bool {
+    var addr = propAddress(kAudioHardwarePropertyProcessObjectList)
+    var size: UInt32 = 0
+    let system = AudioObjectID(kAudioObjectSystemObject)
+    guard AudioObjectGetPropertyDataSize(system, &addr, 0, nil, &size) == noErr, size > 0 else {
+        return false
+    }
+    let count = Int(size) / MemoryLayout<AudioObjectID>.size
+    var ids = [AudioObjectID](repeating: 0, count: count)
+    guard AudioObjectGetPropertyData(system, &addr, 0, nil, &size, &ids) == noErr else { return false }
+
+    let selfPid = ProcessInfo.processInfo.processIdentifier
+    for id in ids {
+        if let pid = getUInt32(id, kAudioProcessPropertyPID), pid_t(bitPattern: pid) == selfPid {
+            continue
+        }
+        if let running = getUInt32(id, kAudioProcessPropertyIsRunningOutput), running != 0 {
+            return true
+        }
+    }
+    return false
+}
+
 // MARK: - Engine
 
 struct EngineError: LocalizedError {
@@ -178,15 +209,34 @@ final class Engine {
     private(set) var slots: [Slot] = []
     let masterGain: UnsafeMutablePointer<Float> = .allocate(capacity: 1)
     let inputRms: UnsafeMutablePointer<Float> = .allocate(capacity: 1)
+    /// Set from the audio thread when any non-zero tap sample arrives.
+    /// Used to detect silent TCC denial (APIs succeed, buffers are all zeros).
+    private let sawInputFlag: UnsafeMutablePointer<Int32> = .allocate(capacity: 1)
+    /// IO callback invocations — 0 means the aggregate never entered the realtime loop
+    /// (common when a broken HDMI/DP device is in the mix on macOS 26).
+    private let callbackCount: UnsafeMutablePointer<Int32> = .allocate(capacity: 1)
 
     private var ring: UnsafeMutablePointer<Float>?
     private var ringFrames = 0
     private var writeIndex = 0   // audio-thread only
 
-    private init() { masterGain.pointee = 1; inputRms.pointee = 0 }
+    private init() {
+        masterGain.pointee = 1
+        inputRms.pointee = 0
+        sawInputFlag.pointee = 0
+        callbackCount.pointee = 0
+    }
+
+    /// True once the tap has delivered at least one non-silent buffer this session.
+    var hasReceivedAudio: Bool { sawInputFlag.pointee != 0 }
+
+    /// True once the aggregate IO proc has fired at least once.
+    var hasIOCallbacks: Bool { callbackCount.pointee > 0 }
 
     func start(deviceConfigs: [DeviceConfig], master: Float, masterUid: String?) throws {
         if running { stop() }
+        sawInputFlag.pointee = 0
+        callbackCount.pointee = 0
 
         slots = []
         for cfg in deviceConfigs {
@@ -292,6 +342,7 @@ final class Engine {
         status = AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, nil) {
             [weak self] _, inInputData, _, outOutputData, _ in
             guard let self else { return }
+            self.callbackCount.pointee &+= 1
 
             let inABL = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
             let outABL = UnsafeMutableAudioBufferListPointer(outOutputData)
@@ -310,7 +361,10 @@ final class Engine {
                         ringPtr[w] = l; ringPtr[w + 1] = r
                         sumSq += l * l + r * r
                     }
-                    if frames > 0 { inputRmsPtr.pointee = (sumSq / Float(frames * 2)).squareRoot() }
+                    if frames > 0 {
+                        inputRmsPtr.pointee = (sumSq / Float(frames * 2)).squareRoot()
+                        if sumSq > 0 { self.sawInputFlag.pointee = 1 }
+                    }
                 } else if ch == 1 && inABL.count >= 2, let d1 = inABL[1].mData {
                     let l = d0.assumingMemoryBound(to: Float.self)
                     let r = d1.assumingMemoryBound(to: Float.self)
@@ -321,7 +375,10 @@ final class Engine {
                         ringPtr[w] = l[f]; ringPtr[w + 1] = r[f]
                         sumSq += l[f] * l[f] + r[f] * r[f]
                     }
-                    if frames > 0 { inputRmsPtr.pointee = (sumSq / Float(frames * 2)).squareRoot() }
+                    if frames > 0 {
+                        inputRmsPtr.pointee = (sumSq / Float(frames * 2)).squareRoot()
+                        if sumSq > 0 { self.sawInputFlag.pointee = 1 }
+                    }
                 }
             }
             let base = self.writeIndex
@@ -398,6 +455,8 @@ final class Engine {
         if let r = ring { r.deallocate(); ring = nil }
         for slot in slots { slot.rms.pointee = 0 }
         inputRms.pointee = 0
+        sawInputFlag.pointee = 0
+        callbackCount.pointee = 0
         running = false
     }
 

@@ -19,11 +19,41 @@ final class AppModel: ObservableObject {
     @Published var levels: [String: Float] = [:]
     @Published var errorMessage: String?
     @Published var settings = Settings()
+    /// True when Gatekeeper is running us from a translocated (Downloads) copy.
+    @Published var isTranslocated = false
 
     private let engine = Engine.shared
     private var meterTimer: Timer?
+    private var captureHealthWork: [DispatchWorkItem] = []
     private var restartWork: DispatchWorkItem?
     let isPreview: Bool
+
+    static let translocationMessage = """
+        SoundStage was opened from Downloads/Desktop, so macOS isolated it (App Translocation) and System Audio Recording permission can’t stick.
+
+        Fix: move SoundStage.app into /Applications, then:
+        xattr -dr com.apple.quarantine /Applications/SoundStage.app
+        Open it from /Applications and allow permission again.
+        """
+
+    static let silentCaptureMessage = """
+        System audio isn’t reaching SoundStage (silent tap).
+
+        Privacy can show SoundStage as allowed while the grant is stale — common after rebuilding/reinstalling (the code signature changed).
+
+        Fix:
+        1. System Settings › Privacy & Security › Screen & System Audio Recording
+        2. Turn SoundStage OFF, then ON again (both lists if you see two)
+        3. Quit SoundStage completely, open it from /Applications, play audio, press Start
+
+        A Mac restart is usually not required.
+        """
+
+    static let deadAggregateMessage = """
+        The mix didn’t start (audio engine never ran). On macOS 26 this often happens when an HDMI/DisplayPort display is included in the aggregate.
+
+        SoundStage left display outputs off by default — enable them one at a time if you need them. Built-in + Bluetooth should work together.
+        """
 
     /// `preview: true` builds a static model for offscreen rendering
     /// (--capture): no engine, no timers, no persistence side effects.
@@ -35,6 +65,10 @@ final class AppModel: ObservableObject {
         }
         refreshDevices()
         guard !preview else { return }
+        isTranslocated = isRunningFromAppTranslocation()
+        if isTranslocated {
+            errorMessage = Self.translocationMessage
+        }
         watchDeviceList()
 
         meterTimer = Timer.scheduledTimer(withTimeInterval: 0.125, repeats: true) { [weak self] _ in
@@ -42,7 +76,7 @@ final class AppModel: ObservableObject {
         }
 
         // Resume routing if it was live when the app last quit.
-        if settings.wasRunning && !enabledDevices.isEmpty {
+        if !isTranslocated && settings.wasRunning && !enabledDevices.isEmpty {
             start()
         }
     }
@@ -56,7 +90,17 @@ final class AppModel: ObservableObject {
     // MARK: - Derived
 
     var enabledDevices: [AudioDevice] {
-        devices.filter { settings.enabled[$0.uid] ?? true }
+        devices.filter { isEnabled($0) }
+    }
+
+    /// Explicit setting wins; otherwise on — except HDMI/DP, which often break
+    /// private aggregates on macOS 26 (IO never starts). Those are opt-in.
+    func isEnabled(_ device: AudioDevice) -> Bool {
+        if let explicit = settings.enabled[device.uid] { return explicit }
+        if device.transport == "hdmi" || device.transport == "displayport" {
+            return false
+        }
+        return true
     }
 
     var effectiveMasterUid: String? {
@@ -79,6 +123,11 @@ final class AppModel: ObservableObject {
 
     func start() {
         errorMessage = nil
+        isTranslocated = isRunningFromAppTranslocation()
+        if isTranslocated {
+            errorMessage = Self.translocationMessage
+            return
+        }
         let list = enabledDevices
         guard !list.isEmpty else {
             errorMessage = "Select at least one output device."
@@ -97,7 +146,9 @@ final class AppModel: ObservableObject {
                 masterUid: effectiveMasterUid
             )
             running = true
+            scheduleCaptureHealthCheck()
         } catch {
+            cancelCaptureHealthCheck()
             engine.stop()
             running = false
             errorMessage = error.localizedDescription
@@ -105,6 +156,7 @@ final class AppModel: ObservableObject {
     }
 
     func stop() {
+        cancelCaptureHealthCheck()
         settings.wasRunning = false
         save()
         engine.stop()
@@ -115,6 +167,7 @@ final class AppModel: ObservableObject {
     func toggle() { running ? stop() : start() }
 
     func shutdown() {
+        cancelCaptureHealthCheck()
         engine.stop()
     }
 
@@ -127,6 +180,55 @@ final class AppModel: ObservableObject {
         }
         restartWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    // MARK: - Capture health (silent TCC / post-grant relaunch)
+
+    private func scheduleCaptureHealthCheck() {
+        cancelCaptureHealthCheck()
+        // Two spaced checks: quiet tracks / slow IO can look silent for ~2s.
+        let first = DispatchWorkItem { [weak self] in
+            Task { @MainActor in self?.evaluateCaptureHealth(final: false) }
+        }
+        let second = DispatchWorkItem { [weak self] in
+            Task { @MainActor in self?.evaluateCaptureHealth(final: true) }
+        }
+        captureHealthWork = [first, second]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: first)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: second)
+    }
+
+    private func cancelCaptureHealthCheck() {
+        captureHealthWork.forEach { $0.cancel() }
+        captureHealthWork = []
+    }
+
+    private func evaluateCaptureHealth(final: Bool) {
+        guard running, engine.running else { return }
+        if engine.hasReceivedAudio { return }
+
+        // Aggregate never entered the realtime loop — usually a bad HDMI/DP
+        // sub-device, not a Privacy issue. No reboot needed.
+        if !engine.hasIOCallbacks {
+            guard final else { return }
+            engine.stop()
+            running = false
+            levels = [:]
+            settings.wasRunning = false
+            save()
+            errorMessage = Self.deadAggregateMessage
+            return
+        }
+
+        // Only treat silence as TCC failure when something else is clearly playing.
+        guard anyOtherProcessPlayingOutput() else { return }
+        guard final else { return }
+        engine.stop()
+        running = false
+        levels = [:]
+        settings.wasRunning = false
+        save()
+        errorMessage = Self.silentCaptureMessage
     }
 
     // MARK: - Live parameter updates

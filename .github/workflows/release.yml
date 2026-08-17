@@ -40,7 +40,8 @@ jobs:
           **Install**
           1. Download `SoundStage.app.zip`, unzip, move to `/Applications`
           2. The app is not notarized — clear quarantine: `xattr -dr com.apple.quarantine /Applications/SoundStage.app` (or right-click → Open)
-          3. Click the sliders icon in the menu bar → **Start** → allow *System Audio Recording*
+          3. A mixer window opens on launch (no Dock icon). Click **Start** → allow *System Audio Recording*
+          4. If you already allowed permission on a previous launch, Quit and reopen once
 
           Requires macOS 14.4+ (Core Audio process-tap API), Apple Silicon.
           EOF
