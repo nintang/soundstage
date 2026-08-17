@@ -33,11 +33,20 @@ struct PanelView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
             controls
+            if !CaptureTheme.active {
+                Button("Menu Bar Settings…") {
+                    AppDelegate.openMenuBarSettings()
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .foregroundStyle(CaptureTheme.secondary)
+            }
         }
         .padding(14)
-        .frame(width: 340)
+        .frame(width: 360)
     }
 
     private var header: some View {
@@ -123,7 +132,7 @@ struct DeviceRow: View {
     @EnvironmentObject var model: AppModel
     let device: AudioDevice
 
-    private var enabled: Bool { model.settings.enabled[device.uid] ?? true }
+    private var enabled: Bool { model.isEnabled(device) }
     private var muted: Bool { model.settings.mute[device.uid] ?? false }
 
     private var badge: String {
